@@ -161,3 +161,18 @@ SELECT 'tok_' || lpad(to_hex(n), 16, '0'),
 FROM generate_series(1, 10000) AS n
 ON CONFLICT (card_token) DO NOTHING;
 
+CREATE TABLE IF NOT EXISTS payment_events_invalidated (
+    src_topic      TEXT        NOT NULL,
+    src_partition  INTEGER     NOT NULL,
+    src_offset     BIGINT      NOT NULL,
+    src_kafka_ts   TIMESTAMPTZ,
+    event_id       TEXT,                 -- as sent (may be missing or invalid), masked
+    card_token     TEXT,                 -- as sent, masked
+    dq_rule        TEXT        NOT NULL, -- first failed rule
+    reason         TEXT        NOT NULL, -- all failure reasons, '; '-separated
+    dq_failures    JSONB       NOT NULL, -- [{rule, field, reason}, ...]
+    raw_payload    TEXT,                 -- original message, card numbers masked
+    rejected_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT pk_payment_events_invalidated PRIMARY KEY (src_topic, src_partition, src_offset)
+);
+CREATE INDEX IF NOT EXISTS ix_pei_rule_time ON payment_events_invalidated (dq_rule, rejected_at);
