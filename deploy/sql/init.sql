@@ -21,9 +21,9 @@ CREATE TABLE IF NOT EXISTS enriched_txn (
     amount            NUMERIC(12,2)  NOT NULL CHECK (amount > 0),
     currency          CHAR(3)        NOT NULL,
     country           CHAR(2)        NOT NULL,
-    channel           TEXT           NOT NULL CHECK (channel IN ('POS', 'ECOM', 'ATM')),
+    channel           TEXT           NOT NULL CHECK (channel IN ('POS', 'ECOM', 'ATM', 'MOTO')),
     event_time        TIMESTAMPTZ    NOT NULL,
-    status            TEXT           NOT NULL CHECK (status IN ('APPROVED', 'DECLINED', 'PENDING')),
+    status            TEXT           NOT NULL CHECK (status IN ('APPROVED', 'DECLINED', 'PENDING', 'REVERSED')),
     card_avg_30d      NUMERIC(12,2),
     is_blacklisted    BOOLEAN        NOT NULL DEFAULT FALSE,
     processed_at      TIMESTAMPTZ    NOT NULL DEFAULT now()
