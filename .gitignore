@@ -11,3 +11,7 @@ spark-warehouse/
 metastore_db/
 .vscode/
 .idea/
+.deploy/airflow/env
+.deploy/airflow/airflow.cfg
+.deploy/airflow/airflow-webserver.pid
+.deploy/airflow/webserver_config.py
