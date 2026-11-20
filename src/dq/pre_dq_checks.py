@@ -339,11 +339,11 @@ DEFAULT_RAW_TOPIC = "raw_payments"
 
 
 def read_raw_events(spark: SparkSession) -> DataFrame:
-    """Stream raw events from Kafka (TOPIC_RAW, default ray_payments). Bad messages never fail the read."""
+    """Stream raw events from the Kafka topic named in .env (TOPIC_RAW). Bad messages never fail the read."""
     return (
         spark.readStream.format("kafka")
         .option("kafka.bootstrap.servers", os.environ["KAFKA_BOOTSTRAP"])
-        .option("subscribe", os.getenv("TOPIC_RAW", DEFAULT_RAW_TOPIC))
+        .option("subscribe", os.environ["TOPIC_RAW"])
         .option("startingOffsets", os.getenv("KAFKA_STARTING_OFFSETS", "latest"))
         .option("maxOffsetsPerTrigger", os.getenv("KAFKA_MAX_OFFSETS_PER_TRIGGER", "5000"))
         .option("failOnDataLoss", "false")

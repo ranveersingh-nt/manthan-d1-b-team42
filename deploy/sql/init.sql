@@ -24,9 +24,9 @@ CREATE TABLE IF NOT EXISTS enriched_txn (
     amount            NUMERIC(12,2)  NOT NULL CHECK (amount > 0),
     currency          CHAR(3)        NOT NULL,
     country           CHAR(2)        NOT NULL,
-    channel           TEXT           NOT NULL CHECK (channel IN ('POS', 'ECOM', 'ATM')),
+    channel           TEXT           NOT NULL CHECK (channel IN ('POS', 'ECOM', 'ATM', 'MOTO')),
     event_time        TIMESTAMPTZ    NOT NULL,
-    status            TEXT           NOT NULL CHECK (status IN ('APPROVED', 'DECLINED', 'PENDING')),
+    status            TEXT           NOT NULL CHECK (status IN ('APPROVED', 'DECLINED', 'PENDING', 'REVERSED')),
     card_avg_30d      NUMERIC(12,2),
     is_blacklisted    BOOLEAN        NOT NULL DEFAULT FALSE,
     processed_at      TIMESTAMPTZ    NOT NULL DEFAULT now()
@@ -39,28 +39,13 @@ CREATE TABLE IF NOT EXISTS payment_events_validated (
     amount            NUMERIC(12,2)  NOT NULL CHECK (amount > 0),
     currency          CHAR(3)        NOT NULL,
     country           CHAR(2)        NOT NULL,
-    channel           TEXT           NOT NULL CHECK (channel IN ('POS', 'ECOM', 'ATM')),
+    channel           TEXT           NOT NULL CHECK (channel IN ('POS', 'ECOM', 'ATM', 'MOTO')),
     event_time        TIMESTAMPTZ    NOT NULL,
-    status            TEXT           NOT NULL CHECK (status IN ('APPROVED', 'DECLINED', 'PENDING')),
+    status            TEXT           NOT NULL CHECK (status IN ('APPROVED', 'DECLINED', 'PENDING', 'REVERSED')),
     card_avg_30d      NUMERIC(12,2),
     is_blacklisted    BOOLEAN        NOT NULL DEFAULT FALSE,
     processed_at      TIMESTAMPTZ    NOT NULL DEFAULT now()
 );
-CREATE TABLE IF NOT EXISTS payment_events_invalidated (
-    src_topic      TEXT        NOT NULL,
-    src_partition  INTEGER     NOT NULL,
-    src_offset     BIGINT      NOT NULL,
-    src_kafka_ts   TIMESTAMPTZ,
-    event_id       TEXT,                 -- as sent (may be missing or invalid), masked
-    card_token     TEXT,                 -- as sent, masked
-    dq_rule        TEXT        NOT NULL, -- first failed rule
-    reason         TEXT        NOT NULL, -- all failure reasons, '; '-separated
-    dq_failures    JSONB       NOT NULL, -- [{rule, field, reason}, ...]
-    raw_payload    TEXT,                 -- original message, card numbers masked
-    rejected_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT pk_payment_events_invalidated PRIMARY KEY (src_topic, src_partition, src_offset)
-);
-CREATE INDEX IF NOT EXISTS ix_pei_rule_time ON payment_events_invalidated (dq_rule, rejected_at);
 
 
 CREATE INDEX IF NOT EXISTS idx_enriched_txn_event_time ON enriched_txn (event_time);
@@ -123,3 +108,56 @@ CREATE TABLE IF NOT EXISTS pipeline_metrics (
     metric_value      DOUBLE PRECISION NOT NULL,
     PRIMARY KEY (metric_time, metric_name)
 );
+
+-- Bronze copy of validated events (filled by src/processor/bronze.py), plus when each row was loaded.
+CREATE TABLE IF NOT EXISTS payment_events_bronze (
+    event_id           UUID           PRIMARY KEY,
+    card_token         TEXT           NOT NULL,
+    merchant_id        TEXT           NOT NULL,
+    merchant_category  TEXT           NOT NULL,
+    amount             NUMERIC(18,2)  NOT NULL,
+    currency           TEXT           NOT NULL,
+    country            TEXT           NOT NULL,
+    channel            TEXT           NOT NULL,
+    event_ts           TIMESTAMPTZ    NOT NULL,
+    status             TEXT           NOT NULL,
+    schema_version     SMALLINT       NOT NULL,
+    src_topic          TEXT           NOT NULL,
+    src_partition      INTEGER        NOT NULL,
+    src_offset         BIGINT         NOT NULL,
+    src_kafka_ts       TIMESTAMPTZ,
+    ingested_at        TIMESTAMPTZ    NOT NULL,   -- copied from validated; bronze resumes from max(ingested_at)
+    bronze_loaded_at   TIMESTAMPTZ    NOT NULL    -- set by bronze.py; silver resumes from this
+);
+
+CREATE INDEX IF NOT EXISTS ix_peb_ingested_at      ON payment_events_bronze (ingested_at);
+CREATE INDEX IF NOT EXISTS ix_peb_bronze_loaded_at ON payment_events_bronze (bronze_loaded_at);
+
+-- Seed: synthetic blacklisted merchants. Range m_99001..m_99010 is reserved for "bad" merchants;
+-- the producer sends a small share of events to these ids so the blacklist rule can fire.
+-- Safe to re-run: existing ids are skipped. Analysts can add more with a plain INSERT.
+INSERT INTO merchant_blacklist (merchant_id, reason) VALUES
+    ('m_99001', 'Card-testing merchant: many tiny authorisations'),
+    ('m_99002', 'Linked to a chargeback fraud ring'),
+    ('m_99003', 'Sells gift cards used for cash-out'),
+    ('m_99004', 'Shell merchant with no real goods'),
+    ('m_99005', 'Repeated stolen-card complaints'),
+    ('m_99006', 'High refund-abuse rate'),
+    ('m_99007', 'Unlicensed crypto exchange'),
+    ('m_99008', 'Spoofed merchant category code'),
+    ('m_99009', 'Account-takeover cash-out point'),
+    ('m_99010', 'Flagged by card network alert')
+ON CONFLICT (merchant_id) DO NOTHING;
+
+-- Seed: synthetic 30-day spending baselines for the producer's card pool (cards 1..10000),
+-- so the amount-spike rule works from the first event. Card n has token 'tok_' + n as
+-- 16-digit lowercase hex (n=1 -> tok_0000000000000001, n=10000 -> tok_0000000000002710).
+-- avg_amount_30d is spread between 100.00 and ~500.00. DO NOTHING keeps values that the
+-- daily card-stats DAG has already refreshed.
+INSERT INTO card_baseline (card_token, avg_amount_30d, txn_count_30d)
+SELECT 'tok_' || lpad(to_hex(n), 16, '0'),
+       round(100 + (n * 37) % 400 + (n % 100) / 100.0, 2),
+       20 + n % 60
+FROM generate_series(1, 10000) AS n
+ON CONFLICT (card_token) DO NOTHING;
+

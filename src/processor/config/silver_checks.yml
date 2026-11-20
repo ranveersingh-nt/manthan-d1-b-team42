@@ -1,0 +1,11 @@
+# Business checks silver runs on validated payments before they reach enriched_txn.
+# (The Pre-DQ gate only checks structure; see docs/data-contract.md.)
+# A payment that fails any check is skipped and logged with the reason, so one bad row
+# never blocks the pipeline. Change values here, no code edits needed.
+# Path can be overridden with env SILVER_CHECKS_PATH.
+
+amount_ceiling: 1000000.00        # amount must be > 0 and <= this
+allowed_currencies: [INR, USD, EUR, GBP, AED, SGD]
+allowed_channels: [POS, ECOM, ATM, MOTO]          # keep in sync with enriched_txn CHECK in init.sql
+allowed_statuses: [APPROVED, DECLINED, PENDING, REVERSED]  # keep in sync with init.sql
+max_future_hours: 24              # event time may be at most this far in the future
