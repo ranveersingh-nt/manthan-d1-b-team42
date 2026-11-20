@@ -1,0 +1,72 @@
+# Data quality configuration (owner: Atindra).
+# Change thresholds and patterns here, not in code. Keep in sync with docs/data-contract.md.
+# Path can be overridden with env DQ_CONFIG_PATH.
+
+version: 1
+
+pre_dq:
+  # Field types: string | number | integer | timestamp
+  #   number    -> JSON number that fits decimal(amount_precision, amount_scale)
+  #   timestamp -> JSON string, UTC ISO-8601 matching timestamp_pattern, and a real date/time
+  fields:
+    event_id:
+      type: string
+      required: true
+      pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    card_token:
+      type: string
+      required: true
+      pattern: "^tok_[0-9a-f]{16,32}$"
+    merchant_id:
+      type: string
+      required: true
+    merchant_category:
+      type: string
+      required: true
+    amount:
+      type: number
+      required: true
+    currency:
+      type: string
+      required: true
+    country:
+      type: string
+      required: true
+    channel:
+      type: string
+      required: true
+    event_ts:
+      type: timestamp
+      required: true
+    status:
+      type: string
+      required: true
+    schema_version:
+      type: integer
+      required: false
+
+  supported_schema_versions: [1]
+  default_schema_version: 1
+
+  amount_precision: 18
+  amount_scale: 2
+
+  timestamp_pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+
+  pan_detection:
+    enabled: true
+    # Java regex (Spark). Contiguous 13-19 digits not glued to letters/digits/underscore,
+    # or 4-4-4-4 / 4-6-5 groups separated by space or dash.
+    patterns:
+      - "(?<![0-9A-Za-z_])\\d{13,19}(?![0-9A-Za-z_])"
+      - "(?<![0-9A-Za-z_])\\d{4}[ -]\\d{4}[ -]\\d{4}[ -]\\d{4}(?![0-9A-Za-z_])"
+      - "(?<![0-9A-Za-z_])\\d{4}[ -]\\d{6}[ -]\\d{5}(?![0-9A-Za-z_])"
+    mask: "[REDACTED_PAN]"
+
+  # Rejected payloads longer than this are truncated before DLQ / Postgres / logs.
+  max_payload_chars: 8192
+
+reject_sink:
+  dq_stage: pre_dq
+  # Rows per Postgres upsert statement.
+  upsert_batch_size: 500
