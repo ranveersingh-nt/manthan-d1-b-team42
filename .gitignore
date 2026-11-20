@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+logs/
+checkpoints/
+*.pid
+spark-warehouse/
+metastore_db/
+.vscode/
+.idea/

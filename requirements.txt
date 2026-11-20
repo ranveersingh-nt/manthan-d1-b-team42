@@ -1,0 +1,9 @@
+pyspark==4.1.*
+confluent-kafka
+psycopg2-binary
+python-dotenv
+pyyaml
+faker
+pytest
+black
+ruff
