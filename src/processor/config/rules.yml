@@ -1,0 +1,21 @@
+# StreamGuard fraud rules: change thresholds here, no code edits needed.
+version: 1
+rules:
+  velocity:
+    enabled: true
+    severity: HIGH
+    max_txn: 5              # alert when MORE than 5 txns...
+    window_minutes: 1       # ...per card within 1 minute
+  impossible_travel:
+    enabled: true
+    severity: HIGH
+    min_distinct_countries: 2
+    window_minutes: 30      # 2 countries for the same card within 30 minutes
+  amount_spike:
+    enabled: true
+    severity: MEDIUM
+    multiplier: 5           # amount > 5 x the card's 30-day average
+    baseline_days: 30
+  merchant_blacklist:
+    enabled: true
+    severity: HIGH          # the merchant list itself lives in the merchant_blacklist table

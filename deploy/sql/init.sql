@@ -89,3 +89,27 @@ CREATE TABLE IF NOT EXISTS pipeline_metrics (
     metric_value      DOUBLE PRECISION NOT NULL,
     PRIMARY KEY (metric_time, metric_name)
 );
+
+-- Bronze copy of validated events (filled by src/processor/bronze.py), plus when each row was loaded.
+CREATE TABLE IF NOT EXISTS payment_events_bronze (
+    event_id           UUID           PRIMARY KEY,
+    card_token         TEXT           NOT NULL,
+    merchant_id        TEXT           NOT NULL,
+    merchant_category  TEXT           NOT NULL,
+    amount             NUMERIC(18,2)  NOT NULL,
+    currency           TEXT           NOT NULL,
+    country            TEXT           NOT NULL,
+    channel            TEXT           NOT NULL,
+    event_ts           TIMESTAMPTZ    NOT NULL,
+    status             TEXT           NOT NULL,
+    schema_version     SMALLINT       NOT NULL,
+    src_topic          TEXT           NOT NULL,
+    src_partition      INTEGER        NOT NULL,
+    src_offset         BIGINT         NOT NULL,
+    src_kafka_ts       TIMESTAMPTZ,
+    ingested_at        TIMESTAMPTZ    NOT NULL,   -- copied from validated; bronze resumes from max(ingested_at)
+    bronze_loaded_at   TIMESTAMPTZ    NOT NULL    -- set by bronze.py; silver resumes from this
+);
+
+CREATE INDEX IF NOT EXISTS ix_peb_ingested_at      ON payment_events_bronze (ingested_at);
+CREATE INDEX IF NOT EXISTS ix_peb_bronze_loaded_at ON payment_events_bronze (bronze_loaded_at);
