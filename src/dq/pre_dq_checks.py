@@ -21,8 +21,9 @@ Env (from .env): KAFKA_BOOTSTRAP, TOPIC_RAW, CHECKPOINT_DIR, PG_URL, PG_USER, PG
 from __future__ import annotations
 
 import json
-import logging
 import os
+import traceback
+from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from dotenv import load_dotenv
@@ -397,7 +398,19 @@ PAN_MASK = "[REDACTED_PAN]"
 MAX_PAYLOAD_CHARS = 8192
 MAX_ID_CHARS = 128
 
-logger = logging.getLogger("streamguard.dq.pre_dq")
+REQUIRED_ENV_KEYS = ("KAFKA_BOOTSTRAP", "TOPIC_RAW", "CHECKPOINT_DIR", "PG_URL", "PG_USER", "PG_PASSWORD")
+
+
+def log(stage: str, message: str) -> None:
+    """Print a timestamped line immediately (flush so it shows up even if the process crashes)."""
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{ts} UTC] [{stage}] {message}", flush=True)
+
+
+def log_error(stage: str, exc: BaseException) -> None:
+    """Print an error with its full traceback."""
+    log(stage, f"ERROR {type(exc).__name__}: {exc}")
+    print(traceback.format_exc(), flush=True)
 
 
 def pg_connect():
@@ -477,29 +490,44 @@ def process_batch(batch_df: DataFrame, batch_id: int) -> None:
     ON CONFLICT DO NOTHING makes that replay safe. Each rejected event is also logged
     (offset, event_id, rule, reason; never the payload).
     """
+    stage = f"batch {batch_id}"
     batch_df = batch_df.persist()
     try:
         total = batch_df.count()
         if total == 0:
+            log(stage, "no new messages")
             return
+        log(stage, f"received {total} message(s) from Kafka")
 
         accepted = accepted_rows(batch_df)
         rejected = rejected_rows(batch_df)
         accepted_count = accepted.count()
         rejected_count = total - accepted_count
+        log(stage, f"checks done: accepted={accepted_count} rejected={rejected_count}")
 
         stored_valid = stored_invalid = 0
-        conn = pg_connect()
+        log(stage, "connecting to Postgres")
+        try:
+            conn = pg_connect()
+        except Exception as exc:
+            log(stage, "could not connect to Postgres; check PG_URL / PG_USER / PG_PASSWORD in .env")
+            log_error(stage, exc)
+            raise
         try:
             with conn.cursor() as cur:
                 if accepted_count:
+                    log(stage, f"inserting {accepted_count} row(s) into {VALIDATED_TABLE}")
                     stored_valid = insert_rows(cur, INSERT_VALIDATED_SQL, accepted.toLocalIterator())
                 if rejected_count:
+                    log(stage, f"inserting {rejected_count} row(s) into {INVALIDATED_TABLE}")
                     stored_invalid = insert_rows(
                         cur, INSERT_INVALIDATED_SQL, rejected.toLocalIterator(), INVALIDATED_TEMPLATE
                     )
             conn.commit()
-        except Exception:
+            log(stage, "COMMIT ok")
+        except Exception as exc:
+            log(stage, "insert failed; rolling back (nothing from this batch is stored)")
+            log_error(stage, exc)
             conn.rollback()
             raise
         finally:
@@ -507,42 +535,76 @@ def process_batch(batch_df: DataFrame, batch_id: int) -> None:
 
         if rejected_count:
             for r in rejected.select("src_partition", "src_offset", "event_id", "dq_rule", "reason").toLocalIterator():
-                logger.warning(json.dumps({"event": "pre_dq_reject", "batch_id": batch_id, **r.asDict()}, default=str))
+                log(
+                    stage,
+                    f"REJECTED partition={r['src_partition']} offset={r['src_offset']} "
+                    f"event_id={r['event_id']} rule={r['dq_rule']} reason={r['reason']}",
+                )
 
-        logger.info(
-            json.dumps(
-                {
-                    "event": "pre_dq_batch",
-                    "batch_id": batch_id,
-                    "received": total,
-                    "accepted": accepted_count,
-                    "rejected": rejected_count,
-                    "stored_validated": stored_valid,
-                    "stored_invalidated": stored_invalid,
-                    "skipped_duplicates": (accepted_count - stored_valid) + (rejected_count - stored_invalid),
-                }
-            )
-        )
+        summary = {
+            "received": total,
+            "accepted": accepted_count,
+            "rejected": rejected_count,
+            "stored_validated": stored_valid,
+            "stored_invalidated": stored_invalid,
+            "skipped_duplicates": (accepted_count - stored_valid) + (rejected_count - stored_invalid),
+        }
+        log(stage, f"summary {json.dumps(summary)}")
+    except Exception as exc:
+        log_error(stage, exc)
+        raise
     finally:
         batch_df.unpersist()
 
 
 def main() -> None:
+    log("startup", "loading .env")
     load_dotenv()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    spark = build_spark()
-    spark.sparkContext.setLogLevel("WARN")
 
-    checked = apply_pre_dq_checks(read_raw_events(spark))
-
+    missing = [k for k in REQUIRED_ENV_KEYS if not os.getenv(k)]
+    if missing:
+        log("startup", f"ERROR missing keys in .env: {', '.join(missing)}")
+        raise SystemExit(1)
     checkpoint = os.path.join(os.environ["CHECKPOINT_DIR"], "pre_dq_to_postgres")
-    query = (
-        checked.writeStream.queryName("pre_dq_to_postgres")
-        .foreachBatch(process_batch)
-        .option("checkpointLocation", checkpoint)
-        .start()
+    log(
+        "startup",
+        f"KAFKA_BOOTSTRAP={os.environ['KAFKA_BOOTSTRAP']} TOPIC_RAW={os.environ['TOPIC_RAW']} "
+        f"startingOffsets={os.getenv('KAFKA_STARTING_OFFSETS', 'latest')} checkpoint={checkpoint} "
+        f"PG_USER={os.environ['PG_USER']}",  # never print PG_PASSWORD
     )
-    query.awaitTermination()
+
+    try:
+        log("spark", "starting Spark (first run downloads the Kafka connector; can take a minute)")
+        spark = build_spark()
+        spark.sparkContext.setLogLevel("WARN")
+        log("spark", f"Spark {spark.version} started")
+    except Exception as exc:
+        log_error("spark", exc)
+        raise
+
+    try:
+        log("kafka", f"subscribing to topic '{os.environ['TOPIC_RAW']}'")
+        checked = apply_pre_dq_checks(read_raw_events(spark))
+        query = (
+            checked.writeStream.queryName("pre_dq_to_postgres")
+            .foreachBatch(process_batch)
+            .option("checkpointLocation", checkpoint)
+            .start()
+        )
+        log("stream", f"query started (id={query.id}); waiting for messages...")
+    except Exception as exc:
+        log_error("stream", exc)
+        raise
+
+    try:
+        query.awaitTermination()
+    except KeyboardInterrupt:
+        log("stream", "stopped by user (Ctrl+C)")
+        query.stop()
+    except Exception as exc:
+        log_error("stream", exc)
+        log("stream", f"last progress: {query.lastProgress}")
+        raise
 
 
 if __name__ == "__main__":
