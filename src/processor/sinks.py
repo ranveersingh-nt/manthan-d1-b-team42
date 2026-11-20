@@ -69,15 +69,29 @@ def write_alerts(df):
     write_rows(df, "alerts", ALERTS_COLUMNS, "ON CONFLICT (alert_id) DO NOTHING")
 
 
+def _pg_url():
+    """PG_URL from .env, e.g. jdbc:postgresql://localhost:5432/team42_db (same as src/dq)."""
+    url = os.getenv("PG_URL")
+    if not url:
+        raise ValueError("PG_URL is not set (add it to your local .env)")
+    return url
+
+
+def jdbc_url():
+    """PG_URL in JDBC form, for Spark's JDBC reader."""
+    url = _pg_url()
+    return url if url.startswith("jdbc:") else f"jdbc:{url}"
+
+
 def pg_connect():
-    """Open a psycopg2 connection from env. Never log these values; the password stays hidden."""
-    return psycopg2.connect(
-        host=os.getenv("PG_HOST"),
-        port=os.getenv("PG_PORT", "5432"),
-        dbname=os.getenv("PG_DB", "team42_db"),
-        user=os.getenv("PG_USER"),
-        password=os.getenv("PG_PASSWORD"),
-    )
+    """psycopg2 connection from PG_URL (JDBC or libpq URI), PG_USER, PG_PASSWORD.
+
+    Never log these values; the password stays out of all output.
+    """
+    url = _pg_url()
+    if url.startswith("jdbc:"):
+        url = url[len("jdbc:"):]  # psycopg2 wants postgresql://host:port/db
+    return psycopg2.connect(url, user=os.getenv("PG_USER"), password=os.getenv("PG_PASSWORD"))
 
 
 def write_rows(df, table, columns, on_conflict_sql):

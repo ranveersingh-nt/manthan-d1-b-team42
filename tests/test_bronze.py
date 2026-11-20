@@ -4,6 +4,7 @@ import pytest
 
 from src.processor.bronze import bronze_table, source_query
 from src.processor.marks import read_mark, save_mark
+from src.processor.sinks import jdbc_url
 
 MARK = datetime(2026, 11, 20, 10, 16, 10, tzinfo=timezone.utc)
 
@@ -33,6 +34,19 @@ def test_unsafe_bronze_table_name_is_rejected(monkeypatch):
 
     with pytest.raises(ValueError, match="BRONZE_TABLE"):
         bronze_table()
+
+
+def test_libpq_pg_url_gets_jdbc_prefix(monkeypatch):
+    monkeypatch.setenv("PG_URL", "postgresql://localhost:5432/team42_db")
+
+    assert jdbc_url() == "jdbc:postgresql://localhost:5432/team42_db"
+
+
+def test_missing_pg_url_is_rejected(monkeypatch):
+    monkeypatch.delenv("PG_URL", raising=False)
+
+    with pytest.raises(ValueError, match="PG_URL"):
+        jdbc_url()
 
 
 def test_missing_mark_returns_none(tmp_path, monkeypatch):

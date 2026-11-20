@@ -1,7 +1,7 @@
 """Replay tests for src/processor/sinks.py.
 
-Needs a Postgres with deploy/sql/init.sql applied and PG_HOST/PG_PORT/PG_DB/PG_USER/PG_PASSWORD
-set; skipped automatically when PG_HOST is not set. Each test uses fresh ids and deletes its rows.
+Needs a Postgres with deploy/sql/init.sql applied and PG_URL/PG_USER/PG_PASSWORD set;
+skipped automatically when PG_URL is not set. Each test uses fresh ids and deletes its rows.
 """
 
 import os
@@ -12,8 +12,8 @@ from decimal import Decimal
 import pytest
 
 pytestmark = pytest.mark.skipif(
-    not os.getenv("PG_HOST"),
-    reason="PG_HOST not set: needs Postgres with deploy/sql/init.sql applied",
+    not os.getenv("PG_URL"),
+    reason="PG_URL not set: needs Postgres with deploy/sql/init.sql applied",
 )
 
 from pyspark.sql import SparkSession  # noqa: E402

@@ -20,10 +20,11 @@ import re
 import time
 from datetime import timedelta
 
+from dotenv import load_dotenv
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-from src.processor.sinks import pg_connect, write_rows
+from src.processor.sinks import jdbc_url, pg_connect, write_rows
 
 log = logging.getLogger("bronze")
 
@@ -68,13 +69,9 @@ def read_resume_point(table):
 
 def read_validated(spark, query):
     """Batch-read the query result from Postgres via Spark JDBC."""
-    url = (
-        f"jdbc:postgresql://{os.getenv('PG_HOST')}:{os.getenv('PG_PORT', '5432')}"
-        f"/{os.getenv('PG_DB', 'team42_db')}"
-    )
     return (
         spark.read.format("jdbc")
-        .option("url", url)
+        .option("url", jdbc_url())
         .option("driver", "org.postgresql.Driver")
         .option("query", query)
         .option("user", os.getenv("PG_USER"))
@@ -115,6 +112,8 @@ def main():
     parser.add_argument("--once", action="store_true", help="run one load and exit")
     args = parser.parse_args()
 
+    # Load .env BEFORE starting Spark, so the Spark worker processes inherit PG_URL etc.
+    load_dotenv()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     poll_seconds = int(os.getenv("BRONZE_POLL_SECONDS", "5"))
     spark = build_spark()
