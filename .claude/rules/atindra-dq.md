@@ -32,3 +32,4 @@ Format: date · prompt summary · outcome. Newest last.
 | 2026-11-20 | Don't run tests; just write the code. | Agreed. Code is written and reviewed by reading only. |
 | 2026-11-20 | Create a flow diagram of how data enters and moves through the Pre-DQ check file. | `docs/pre-dq-flow.md`: Mermaid flowchart (fetch → prepare → rules → decision → one-transaction store → logs) + stage table + guarantees. |
 | 2026-11-20 | Change the Kafka topic name to `ray_payments` in the code. | `read_raw_events` now defaults to `ray_payments` (`DEFAULT_RAW_TOPIC`); env `TOPIC_RAW` still overrides it. |
+| 2026-11-20 | Don't hard-code the topic; read it only from `TOPIC_RAW` in `.env`. | Removed `DEFAULT_RAW_TOPIC`; `read_raw_events` uses `os.environ["TOPIC_RAW"]` (fails fast if the key is missing). |
