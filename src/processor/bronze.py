@@ -17,6 +17,7 @@ import argparse
 import logging
 import os
 import re
+import sys
 import time
 from datetime import timedelta
 
@@ -24,7 +25,7 @@ from dotenv import load_dotenv
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-from src.processor.sinks import jdbc_url, pg_connect, write_rows
+from src.processor.sinks import pg_connect, read_jdbc, write_rows
 
 log = logging.getLogger("bronze")
 
@@ -67,26 +68,13 @@ def read_resume_point(table):
         conn.close()
 
 
-def read_validated(spark, query):
-    """Batch-read the query result from Postgres via Spark JDBC."""
-    return (
-        spark.read.format("jdbc")
-        .option("url", jdbc_url())
-        .option("driver", "org.postgresql.Driver")
-        .option("query", query)
-        .option("user", os.getenv("PG_USER"))
-        .option("password", os.getenv("PG_PASSWORD"))
-        .load()
-    )
-
-
 def load_once(spark):
     """Copy new validated rows into bronze once. Returns how many rows were read."""
     table = bronze_table()
     overlap = int(os.getenv("BRONZE_OVERLAP_SECONDS", "30"))
 
     since = read_resume_point(table)
-    df = read_validated(spark, source_query(since, overlap))
+    df = read_jdbc(spark, source_query(since, overlap))
     # persist: count and write reuse one read, and bronze_loaded_at is computed only once.
     df = df.withColumn("bronze_loaded_at", F.current_timestamp()).persist()
     try:
@@ -98,9 +86,13 @@ def load_once(spark):
         df.unpersist()
 
 
-def build_spark():
+def build_spark(app_name="streamguard-bronze"):
+    """Spark session with the Postgres JDBC driver and UTC timestamps (shared with silver)."""
+    # Spark's Python workers must use this same interpreter (the venv); otherwise, on Windows,
+    # Spark starts whatever `python` is on PATH and fails with "Python worker failed to connect back".
+    os.environ.setdefault("PYSPARK_PYTHON", sys.executable)
     return (
-        SparkSession.builder.appName("streamguard-bronze")
+        SparkSession.builder.appName(app_name)
         .config("spark.jars.packages", POSTGRES_JDBC_PACKAGE)
         .config("spark.sql.session.timeZone", "UTC")
         .getOrCreate()

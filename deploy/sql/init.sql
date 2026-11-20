@@ -113,3 +113,31 @@ CREATE TABLE IF NOT EXISTS payment_events_bronze (
 
 CREATE INDEX IF NOT EXISTS ix_peb_ingested_at      ON payment_events_bronze (ingested_at);
 CREATE INDEX IF NOT EXISTS ix_peb_bronze_loaded_at ON payment_events_bronze (bronze_loaded_at);
+
+-- Seed: synthetic blacklisted merchants. Range m_99001..m_99010 is reserved for "bad" merchants;
+-- the producer sends a small share of events to these ids so the blacklist rule can fire.
+-- Safe to re-run: existing ids are skipped. Analysts can add more with a plain INSERT.
+INSERT INTO merchant_blacklist (merchant_id, reason) VALUES
+    ('m_99001', 'Card-testing merchant: many tiny authorisations'),
+    ('m_99002', 'Linked to a chargeback fraud ring'),
+    ('m_99003', 'Sells gift cards used for cash-out'),
+    ('m_99004', 'Shell merchant with no real goods'),
+    ('m_99005', 'Repeated stolen-card complaints'),
+    ('m_99006', 'High refund-abuse rate'),
+    ('m_99007', 'Unlicensed crypto exchange'),
+    ('m_99008', 'Spoofed merchant category code'),
+    ('m_99009', 'Account-takeover cash-out point'),
+    ('m_99010', 'Flagged by card network alert')
+ON CONFLICT (merchant_id) DO NOTHING;
+
+-- Seed: synthetic 30-day spending baselines for the producer's card pool (cards 1..10000),
+-- so the amount-spike rule works from the first event. Card n has token 'tok_' + n as
+-- 16-digit lowercase hex (n=1 -> tok_0000000000000001, n=10000 -> tok_0000000000002710).
+-- avg_amount_30d is spread between 100.00 and ~500.00. DO NOTHING keeps values that the
+-- daily card-stats DAG has already refreshed.
+INSERT INTO card_baseline (card_token, avg_amount_30d, txn_count_30d)
+SELECT 'tok_' || lpad(to_hex(n), 16, '0'),
+       round(100 + (n * 37) % 400 + (n % 100) / 100.0, 2),
+       20 + n % 60
+FROM generate_series(1, 10000) AS n
+ON CONFLICT (card_token) DO NOTHING;
