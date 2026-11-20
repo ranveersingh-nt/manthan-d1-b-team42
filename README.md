@@ -43,5 +43,8 @@ Airflow runs the daily reports and Superset shows the dashboards. Everything run
 | `BRONZE_OVERLAP_SECONDS` | No | `30` | processor (bronze) |
 | `SILVER_POLL_SECONDS` | No | `5` | processor (silver) |
 | `SILVER_OVERLAP_SECONDS` | No | `30` | processor (silver) |
+| `SILVER_CHECKS_PATH` | No | `src/processor/config/silver_checks.yml` | processor (silver) |
+| `GOLD_POLL_SECONDS` | No | `5` | processor (gold) |
+| `GOLD_OVERLAP_SECONDS` | No | `30` | processor (gold) |
 
 See `docs/runbook.md` for operations and `docs/branching-strategy.md` for the PR workflow.
