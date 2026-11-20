@@ -13,7 +13,7 @@ Rejected events are also logged with their reasons. Routing rejects to the DLQ c
 
 Run:
     python -m src.dq.pre_dq_checks
-Env (from .env): KAFKA_BOOTSTRAP, TOPIC_RAW (default ray_payments), CHECKPOINT_DIR, PG_URL, PG_USER, PG_PASSWORD,
+Env (from .env): KAFKA_BOOTSTRAP, TOPIC_RAW, CHECKPOINT_DIR, PG_URL, PG_USER, PG_PASSWORD,
     optional KAFKA_STARTING_OFFSETS (default latest), KAFKA_MAX_OFFSETS_PER_TRIGGER (default 5000),
     SPARK_LOCAL_DIR (default ./data/spark-tmp, keeps Spark temp files on the repo drive).
 """
@@ -331,15 +331,12 @@ def build_spark() -> SparkSession:
     )
 
 
-DEFAULT_RAW_TOPIC = "ray_payments"
-
-
 def read_raw_events(spark: SparkSession) -> DataFrame:
-    """Stream raw events from Kafka (TOPIC_RAW, default ray_payments). Bad messages never fail the read."""
+    """Stream raw events from the Kafka topic named in .env (TOPIC_RAW). Bad messages never fail the read."""
     return (
         spark.readStream.format("kafka")
         .option("kafka.bootstrap.servers", os.environ["KAFKA_BOOTSTRAP"])
-        .option("subscribe", os.getenv("TOPIC_RAW", DEFAULT_RAW_TOPIC))
+        .option("subscribe", os.environ["TOPIC_RAW"])
         .option("startingOffsets", os.getenv("KAFKA_STARTING_OFFSETS", "latest"))
         .option("maxOffsetsPerTrigger", os.getenv("KAFKA_MAX_OFFSETS_PER_TRIGGER", "5000"))
         .option("failOnDataLoss", "false")
