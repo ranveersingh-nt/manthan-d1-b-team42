@@ -160,6 +160,9 @@ services:
       CHECKPOINT_DIR: ${AIRFLOW_CHECKPOINT_DIR:-/opt/airflow/data/checkpoints}
       # Spark scratch space inside the container, not on the Windows bind mount
       SPARK_LOCAL_DIR: /tmp/spark-tmp
+      # Empty = don't let build_spark() override the image's spark-defaults.conf
+      # (Kafka connector already cached in /opt/spark-ivy at build time; no runtime download)
+      SPARK_JARS_PACKAGES: ""
       PG_URL: jdbc:postgresql://postgres:5432/team42_db
       PG_USER: ${POSTGRES_USER}
       PG_PASSWORD: ${POSTGRES_PASSWORD}
