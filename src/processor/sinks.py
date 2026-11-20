@@ -83,6 +83,19 @@ def jdbc_url():
     return url if url.startswith("jdbc:") else f"jdbc:{url}"
 
 
+def read_jdbc(spark, query):
+    """Batch-read a SQL query's result from Postgres into a Spark DataFrame (Spark JDBC)."""
+    return (
+        spark.read.format("jdbc")
+        .option("url", jdbc_url())
+        .option("driver", "org.postgresql.Driver")
+        .option("query", query)
+        .option("user", os.getenv("PG_USER"))
+        .option("password", os.getenv("PG_PASSWORD"))
+        .load()
+    )
+
+
 def pg_connect():
     """psycopg2 connection from PG_URL (JDBC or libpq URI), PG_USER, PG_PASSWORD.
 

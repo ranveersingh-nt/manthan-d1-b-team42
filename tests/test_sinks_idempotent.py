@@ -5,6 +5,7 @@ skipped automatically when PG_URL is not set. Each test uses fresh ids and delet
 """
 
 import os
+import sys
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -47,6 +48,7 @@ AGG_SCHEMA = (
 
 @pytest.fixture(scope="module")
 def spark():
+    os.environ.setdefault("PYSPARK_PYTHON", sys.executable)  # Spark workers use the venv Python
     session = (
         SparkSession.builder.master("local[2]")
         .appName("test_sinks_idempotent")
