@@ -13,7 +13,7 @@ Rejected events are also logged with their reasons. Routing rejects to the DLQ c
 
 Run:
     python -m src.dq.pre_dq_checks
-Env (from .env): KAFKA_BOOTSTRAP, TOPIC_RAW (default ray_payments), CHECKPOINT_DIR, PG_URL, PG_USER, PG_PASSWORD,
+Env (from .env): KAFKA_BOOTSTRAP, TOPIC_RAW (default raW_payments), CHECKPOINT_DIR, PG_URL, PG_USER, PG_PASSWORD,
     optional KAFKA_STARTING_OFFSETS (default latest), KAFKA_MAX_OFFSETS_PER_TRIGGER (default 5000),
     SPARK_LOCAL_DIR (default ./data/spark-tmp, keeps Spark temp files on the repo drive).
 """
@@ -318,20 +318,24 @@ def apply_pre_dq_checks(raw_df: DataFrame) -> DataFrame:
 def build_spark() -> SparkSession:
     import pyspark
 
-    kafka_pkg = f"org.apache.spark:spark-sql-kafka-0-10_2.13:{pyspark.__version__}"
+    # Default: download the Kafka connector at startup (laptop runs). Docker images that already
+    # ship the jars set SPARK_JARS_PACKAGES="" so no runtime download is attempted.
+    kafka_pkg = os.getenv("SPARK_JARS_PACKAGES", f"org.apache.spark:spark-sql-kafka-0-10_2.13:{pyspark.__version__}")
     local_dir = os.getenv("SPARK_LOCAL_DIR", "./data/spark-tmp")
+    builder = SparkSession.builder.appName("streamguard-pre-dq-checks")
+    if kafka_pkg:
+        builder = builder.config("spark.jars.packages", kafka_pkg).config(
+            "spark.jars.ivy", "./data/ivy"  # keep downloaded jars on the repo drive
+        )
     return (
-        SparkSession.builder.appName("streamguard-pre-dq-checks")
-        .config("spark.jars.packages", kafka_pkg)
-        .config("spark.jars.ivy", "./data/ivy")  # keep downloaded jars on the repo drive
-        .config("spark.local.dir", local_dir)
+        builder.config("spark.local.dir", local_dir)
         .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.session.timeZone", "UTC")
         .getOrCreate()
     )
 
 
-DEFAULT_RAW_TOPIC = "ray_payments"
+DEFAULT_RAW_TOPIC = "raw_payments"
 
 
 def read_raw_events(spark: SparkSession) -> DataFrame:

@@ -5,9 +5,12 @@
 -- Format validation (card token, currency list, country, category) happens in the processor;
 -- bad events go to the dead-letter topic, so the database only enforces basic safety checks.
 
--- Create the team42_db database if it does not exist yet (CREATE DATABASE has no IF NOT EXISTS).
+-- Create team42_db and superset_db if they do not exist yet (CREATE DATABASE has no IF NOT EXISTS).
 SELECT 'CREATE DATABASE team42_db'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'team42_db')\gexec
+
+SELECT 'CREATE DATABASE superset_db'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'superset_db')\gexec
 
 -- Switch to team42_db so every table below is created inside it.
 \connect team42_db
@@ -28,6 +31,37 @@ CREATE TABLE IF NOT EXISTS enriched_txn (
     is_blacklisted    BOOLEAN        NOT NULL DEFAULT FALSE,
     processed_at      TIMESTAMPTZ    NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS payment_events_validated (
+    event_id          UUID           PRIMARY KEY,
+    card_token        TEXT           NOT NULL,
+    merchant_id       TEXT           NOT NULL,
+    merchant_category TEXT           NOT NULL,
+    amount            NUMERIC(12,2)  NOT NULL CHECK (amount > 0),
+    currency          CHAR(3)        NOT NULL,
+    country           CHAR(2)        NOT NULL,
+    channel           TEXT           NOT NULL CHECK (channel IN ('POS', 'ECOM', 'ATM')),
+    event_time        TIMESTAMPTZ    NOT NULL,
+    status            TEXT           NOT NULL CHECK (status IN ('APPROVED', 'DECLINED', 'PENDING')),
+    card_avg_30d      NUMERIC(12,2),
+    is_blacklisted    BOOLEAN        NOT NULL DEFAULT FALSE,
+    processed_at      TIMESTAMPTZ    NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS payment_events_invalidated (
+    src_topic      TEXT        NOT NULL,
+    src_partition  INTEGER     NOT NULL,
+    src_offset     BIGINT      NOT NULL,
+    src_kafka_ts   TIMESTAMPTZ,
+    event_id       TEXT,                 -- as sent (may be missing or invalid), masked
+    card_token     TEXT,                 -- as sent, masked
+    dq_rule        TEXT        NOT NULL, -- first failed rule
+    reason         TEXT        NOT NULL, -- all failure reasons, '; '-separated
+    dq_failures    JSONB       NOT NULL, -- [{rule, field, reason}, ...]
+    raw_payload    TEXT,                 -- original message, card numbers masked
+    rejected_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT pk_payment_events_invalidated PRIMARY KEY (src_topic, src_partition, src_offset)
+);
+CREATE INDEX IF NOT EXISTS ix_pei_rule_time ON payment_events_invalidated (dq_rule, rejected_at);
+
 
 CREATE INDEX IF NOT EXISTS idx_enriched_txn_event_time ON enriched_txn (event_time);
 
