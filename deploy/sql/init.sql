@@ -40,12 +40,32 @@ CREATE TABLE IF NOT EXISTS payment_events_validated (
     currency          CHAR(3)        NOT NULL,
     country           CHAR(2)        NOT NULL,
     channel           TEXT           NOT NULL CHECK (channel IN ('POS', 'ECOM', 'ATM', 'MOTO')),
-    event_time        TIMESTAMPTZ    NOT NULL,
+    event_ts        TIMESTAMPTZ    NOT NULL,
     status            TEXT           NOT NULL CHECK (status IN ('APPROVED', 'DECLINED', 'PENDING', 'REVERSED')),
     card_avg_30d      NUMERIC(12,2),
     is_blacklisted    BOOLEAN        NOT NULL DEFAULT FALSE,
-    processed_at      TIMESTAMPTZ    NOT NULL DEFAULT now()
+    processed_at      TIMESTAMPTZ    NOT NULL DEFAULT now(),
+    -- Written by src/dq/pre_dq_checks.py (VALIDATED_COLUMNS): contract version + Kafka source position
+    schema_version    INTEGER        NOT NULL DEFAULT 1,
+    src_topic         TEXT,
+    src_partition     INTEGER,
+    src_offset        BIGINT,
+    src_kafka_ts      TIMESTAMPTZ,
+    -- When the Pre-DQ job stored the row; src/processor/bronze.py resumes from max(ingested_at)
+    ingested_at       TIMESTAMPTZ    NOT NULL DEFAULT now(),
+    -- A replayed Kafka message is skipped by ON CONFLICT DO NOTHING
+    CONSTRAINT uq_pev_source_offset UNIQUE (src_topic, src_partition, src_offset)
 );
+-- Upgrade databases created from an older version of this file (re-runnable).
+ALTER TABLE payment_events_validated ADD COLUMN IF NOT EXISTS schema_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE payment_events_validated ADD COLUMN IF NOT EXISTS src_topic      TEXT;
+ALTER TABLE payment_events_validated ADD COLUMN IF NOT EXISTS src_partition  INTEGER;
+ALTER TABLE payment_events_validated ADD COLUMN IF NOT EXISTS src_offset     BIGINT;
+ALTER TABLE payment_events_validated ADD COLUMN IF NOT EXISTS src_kafka_ts   TIMESTAMPTZ;
+ALTER TABLE payment_events_validated ADD COLUMN IF NOT EXISTS ingested_at    TIMESTAMPTZ NOT NULL DEFAULT now();
+CREATE INDEX IF NOT EXISTS ix_pev_ingested_at ON payment_events_validated (ingested_at);
+SELECT 'ALTER TABLE payment_events_validated ADD CONSTRAINT uq_pev_source_offset UNIQUE (src_topic, src_partition, src_offset)'
+WHERE NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'uq_pev_source_offset')\gexec
 
 
 CREATE INDEX IF NOT EXISTS idx_enriched_txn_event_time ON enriched_txn (event_time);
