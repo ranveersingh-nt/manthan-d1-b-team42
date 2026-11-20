@@ -30,7 +30,7 @@ The producer (`src/producer/`) and processor (`src/processor/`) must match this 
 | `merchant_id` | string | Yes | Merchant identifier, e.g. `m_00421`. |
 | `merchant_category` | string | Yes | 4-digit string (MCC), e.g. `5411`. |
 | `amount` | number | Yes | Greater than 0, 2 decimal places, below a configurable ceiling. |
-| `currency` | string | Yes | ISO 4217 code from the allowed list: `INR`, `USD`, `EUR`, `GBP`, `AED`, `SGD`. |
+| `currency` | string | Yes | From the allowed list: `INR`, `USD`, `EUR`, `GBP`, `AED`, `SGD`. |
 | `country` | string | Yes | ISO 3166-1 alpha-2 code, e.g. `IN`. |
 | `channel` | string | Yes | One of `POS`, `ECOM`, `ATM`. |
 | `event_time` | string (timestamp) | Yes | ISO 8601 UTC ending in `Z`. Not more than 24h in the future. |

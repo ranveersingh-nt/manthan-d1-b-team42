@@ -2,10 +2,6 @@
 
 These are shared rules only. Area-specific rules live in `.claude/rules/`. Change this file only through a PR to `main-dev`.
 
-## Context
-- Use case: `docs/use-case.md` (read this first)
-- Event schema: `docs/data-contract.md` (producer and processor must match exactly)
-
 ## Workflow
 - Plan first: outline the approach before writing code, then implement.
 - Log significant prompts and their outcomes in `docs/prompt-log.md`.

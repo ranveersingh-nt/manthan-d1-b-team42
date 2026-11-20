@@ -5,6 +5,10 @@ paths:
 ---
 # Processor and SQL rules (owner: Khushi)
 
+## Context
+- Use case: `docs/use-case.md` (read this first)
+- Event schema: `docs/data-contract.md` (producer and processor must match exactly)
+
 - Parse events with an explicit `StructType` that matches `docs/data-contract.md`. Never infer the schema.
 - Set a watermark on `event_ts`. Document the watermark and state-timeout choices in `docs/architecture.md`.
 - Load fraud rules and thresholds from the Postgres rules table or config. Never hardcode them.
